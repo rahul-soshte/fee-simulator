@@ -4,71 +4,7 @@ import { PositiveIntPicker } from "@/components/FormElements/PositiveIntPicker";
 import { Box } from "@/components/layout/Box";
 import { NextLink } from "@/components/NextLink";
 import * as StellarSDK from '@stellar/stellar-sdk';
-
-
-export function computeInstructionFee(instructions: string): number {
-  const FEE_RATE = 25;
-  const DIVISOR = 10000;
-  const instructionsNum = Number(instructions);
-  const fee = (instructionsNum * FEE_RATE) / DIVISOR;
-  return Math.ceil(fee);
-}
-
-export function computeReadEntriesFee(numberOfReadsandWriteEntries: string): number {
-  const FEE_RATE = 6250;
-  const numberOfReadsandWriteEntriesNum = Number(numberOfReadsandWriteEntries);
-  const fee = (numberOfReadsandWriteEntriesNum * FEE_RATE);
-  return fee;
-}
-
-export function computeWriteEntriesFee(numberOfWriteEntries: string): number {
-  const FEE_RATE = 10000;
-  const numberOfWriteEntriesNum = Number(numberOfWriteEntries);
-  const fee = numberOfWriteEntriesNum * FEE_RATE;
-  return fee;
-}
-
-export function computeReadBytesFee(bytesRead: string): number {
-  const FEE_RATE = 1786;
-  const DIVISOR = 1024;
-  const bytesReadNum = Number(bytesRead);
-  const fee = (bytesReadNum * FEE_RATE) / DIVISOR;
-  return Math.ceil(fee);
-}
-
-export function computeWriteBytesFee(bytesWritten: string): number {
-  const FEE_RATE = 9836;
-  const DIVISOR = 1024;
-  const bytesWrittenNum = Number(bytesWritten);
-  const fee = (bytesWrittenNum * FEE_RATE) / DIVISOR;
-  return Math.ceil(fee);
-}
-
-export function computeHistoricalFee(sizeOfTheTxEnvelopeInBytes: string): number {
-  const FEE_RATE = 16235;
-  const DIVISOR = 1024;
-  const baseSizeOfTheTxnResultInBytes = 300;
-  const effectiveTxnSize = Number(sizeOfTheTxEnvelopeInBytes) + Number(baseSizeOfTheTxnResultInBytes);
-  const fee = (effectiveTxnSize * FEE_RATE) / DIVISOR;
-  return Math.ceil(fee);
-}
-
-export function computeBandwidthFee(sizeOfTheTxEnvelopeInBytes: string): number {
-  const FEE_RATE = 1624;
-  const DIVISOR = 1024;
-  const effectiveTxnSize = Number(sizeOfTheTxEnvelopeInBytes);
-  const fee = (effectiveTxnSize * FEE_RATE) / DIVISOR;
-  return Math.ceil(fee);
-}
-
-export function computeEventsOrReturnValueFee(sizeOfTheEventsOrReturnValueInBytes: string): number {
-  const FEE_RATE = 10000;
-  const DIVISOR = 1024;
-  const sizeOfTheEventsOrReturnValueInBytesNum = Number(sizeOfTheEventsOrReturnValueInBytes);
-  const fee = (sizeOfTheEventsOrReturnValueInBytesNum * FEE_RATE) / DIVISOR;
-  return Math.ceil(fee);
-}
-
+import { Slider, Typography, Box as MuiBox } from '@mui/material';
 
 interface ParamsState {
   cpuInstructionsPerTxn: string;
@@ -79,10 +15,6 @@ interface ParamsState {
   txnSize: string;
   eventsReturnValueSize: string;
 }
-
-// interface ParamsProps {
-//   onFeeUpdate: (fee: number) => void;
-// }
 
 interface ParamsProps {
   onFeeUpdate: (fee: number, state: ParamsState) => void;
@@ -100,6 +32,14 @@ export interface ActualUsage {
 }
 
 export const Params: React.FC<ParamsProps> = ({ onFeeUpdate, initialState }) => {
+  
+  const [bucketListFeeRate, setBucketListFeeRate] = useState(9836);
+
+  const handleBucketListFeeRateChange = (event: Event, newValue: number | number[]) => {
+    setBucketListFeeRate(newValue as number);
+    // Recalculate fees here if needed
+  };
+ 
   const [actualUsage, setActualUsage] = useState<ParamsState>(
     initialState || {
       cpuInstructionsPerTxn: "0",
@@ -208,9 +148,27 @@ export const Params: React.FC<ParamsProps> = ({ onFeeUpdate, initialState }) => 
             value={actualUsage.eventsReturnValueSize}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleInputChange('eventsReturnValueSize', e.target.value)}
             note="Size of the events return value in bytes" error={undefined}          />
-  
-        </Box>
-      </Card>
+
+          <MuiBox sx={{ mt: 2, mb: 1 }}>
+            <Typography id="bandwidth-fee-rate-slider" gutterBottom variant="subtitle1" sx={{ mb: 1 }}>
+              Bucket List Fee Rate
+            </Typography>
+            <Slider
+              aria-labelledby="bandwidth-fee-rate-slider"
+              value={bucketListFeeRate}
+              onChange={handleBucketListFeeRateChange}
+              valueLabelDisplay="auto"
+              step={1}
+              marks={[
+                { value: 9836, label: '9836' },
+                { value: 12611, label: '12611' },
+              ]}
+              min={9836}
+              max={12611}
+            />
+          </MuiBox>
+            </Box>
+          </Card>
 
       <Alert variant="primary" placement="inline">
         The basic formula for calculating the fees of a transaction,
@@ -224,4 +182,69 @@ export const Params: React.FC<ParamsProps> = ({ onFeeUpdate, initialState }) => 
   );
 };
 
+
+
 export default Params;
+
+export function computeInstructionFee(instructions: string): number {
+  const FEE_RATE = 25;
+  const DIVISOR = 10000;
+  const instructionsNum = Number(instructions);
+  const fee = (instructionsNum * FEE_RATE) / DIVISOR;
+  return Math.ceil(fee);
+}
+
+export function computeReadEntriesFee(numberOfReadsandWriteEntries: string): number {
+  const FEE_RATE = 6250;
+  const numberOfReadsandWriteEntriesNum = Number(numberOfReadsandWriteEntries);
+  const fee = (numberOfReadsandWriteEntriesNum * FEE_RATE);
+  return fee;
+}
+
+export function computeWriteEntriesFee(numberOfWriteEntries: string): number {
+  const FEE_RATE = 10000;
+  const numberOfWriteEntriesNum = Number(numberOfWriteEntries);
+  const fee = numberOfWriteEntriesNum * FEE_RATE;
+  return fee;
+}
+
+export function computeReadBytesFee(bytesRead: string): number {
+  const FEE_RATE = 1786;
+  const DIVISOR = 1024;
+  const bytesReadNum = Number(bytesRead);
+  const fee = (bytesReadNum * FEE_RATE) / DIVISOR;
+  return Math.ceil(fee);
+}
+
+export function computeWriteBytesFee(bytesWritten: string): number {
+  const FEE_RATE = 9836;
+  const DIVISOR = 1024;
+  const bytesWrittenNum = Number(bytesWritten);
+  const fee = (bytesWrittenNum * FEE_RATE) / DIVISOR;
+  return Math.ceil(fee);
+}
+
+export function computeHistoricalFee(sizeOfTheTxEnvelopeInBytes: string): number {
+  const FEE_RATE = 16235;
+  const DIVISOR = 1024;
+  const baseSizeOfTheTxnResultInBytes = 300;
+  const effectiveTxnSize = Number(sizeOfTheTxEnvelopeInBytes) + Number(baseSizeOfTheTxnResultInBytes);
+  const fee = (effectiveTxnSize * FEE_RATE) / DIVISOR;
+  return Math.ceil(fee);
+}
+
+export function computeBandwidthFee(sizeOfTheTxEnvelopeInBytes: string): number {
+  const FEE_RATE = 1624;
+  const DIVISOR = 1024;
+  const effectiveTxnSize = Number(sizeOfTheTxEnvelopeInBytes);
+  const fee = (effectiveTxnSize * FEE_RATE) / DIVISOR;
+  return Math.ceil(fee);
+}
+
+export function computeEventsOrReturnValueFee(sizeOfTheEventsOrReturnValueInBytes: string): number {
+  const FEE_RATE = 10000;
+  const DIVISOR = 1024;
+  const sizeOfTheEventsOrReturnValueInBytesNum = Number(sizeOfTheEventsOrReturnValueInBytes);
+  const fee = (sizeOfTheEventsOrReturnValueInBytesNum * FEE_RATE) / DIVISOR;
+  return Math.ceil(fee);
+}
