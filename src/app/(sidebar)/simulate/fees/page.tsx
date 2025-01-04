@@ -118,8 +118,8 @@ async function sorobill(sim: any, tx_xdr: any) {
   // ].flat();
 
   const metrics = {
-      mem_byte: Number(sim.result.cost.memBytes),
-      cpu_insn: Number(sim.result.cost.cpuInsns)
+      mem_byte: -1,
+      cpu_insn: sorobanTransactionData.resources().instructions()
   };
 
   let arr: LedgerEntryRentChange[] = [];
@@ -399,7 +399,7 @@ export default function ViewXdr() {
       console.log("Total Estimated Fee", totalEstimatedFee)
       setContractCosts(sorocosts);
       
-      const server = new StellarSDK.SorobanRpc.Server('https://soroban-testnet.stellar.org:443');
+      const server = new StellarSDK.rpc.Server('https://soroban-testnet.stellar.org:443');
 
       let inclusionFee = await server.getFeeStats();
       let inclusionFeeMaxNum = Number(inclusionFee.sorobanInclusionFee.max) ;

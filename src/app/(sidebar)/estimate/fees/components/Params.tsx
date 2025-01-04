@@ -140,7 +140,7 @@ export const Params: React.FC<ParamsProps> = ({ onFeeUpdate, initialState }) => 
 
   useEffect(() => {
     const fetchInclusionFee = async () => {
-      const server = new StellarSDK.SorobanRpc.Server('https://soroban-testnet.stellar.org:443');
+      const server = new StellarSDK.rpc.Server('https://soroban-testnet.stellar.org:443');
       try {
         const feeStats = await server.getFeeStats();
         setInclusionFee(Number(feeStats.sorobanInclusionFee.max) / 10000000); // Convert to XLM
