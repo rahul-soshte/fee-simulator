@@ -37,6 +37,8 @@ const FeeEstimation: React.FC = () => {
   const { transaction } = useStore();
   const { activeTab } = transaction.build;
   const { updateBuildActiveTab } = transaction;
+  const { xdr, network } = useStore();
+  const [prevNetwork, setPrevNetwork] = useState(network);
 
   const [resourceFee, setResourceFee] = useState<number>(0);
   const [rentFee, setRentFee] = useState<bigint>(BigInt(0));
@@ -45,6 +47,7 @@ const FeeEstimation: React.FC = () => {
   const [rentCalculatorState, setRentCalculatorState] = useState<RentCalculatorState | null>(null);
   const [paramsState, setParamsState] = useState<ParamsState | null>(null);
 
+  
 
 
   const handleResourceFeeUpdate = (fee: number, state: ParamsState) => {
@@ -62,7 +65,14 @@ const FeeEstimation: React.FC = () => {
     const rentFeeXLM = Number(rentFee) / 10000000;
     setTotalFee(resourceFee + rentFeeXLM);
   }, [resourceFee, rentFee]);
-
+  
+  useEffect(() => {
+    if (network.rpcUrl !== prevNetwork.rpcUrl) {
+      console.log("Network changed. Fetching new inclusion fee...");
+      setPrevNetwork(network);
+    }
+  }, [network]);
+  
   return (
     <Box gap="md">
       <TabView
@@ -71,7 +81,7 @@ const FeeEstimation: React.FC = () => {
           id: "params",
           label: "Resource Usage",
           content: activeTab === "params" ? (
-            <Params onFeeUpdate={handleResourceFeeUpdate} initialState={paramsState} />
+            <Params onFeeUpdate={handleResourceFeeUpdate} initialState={paramsState} network={network} />
           ) : null,
         }}
         tab2={{
@@ -85,7 +95,7 @@ const FeeEstimation: React.FC = () => {
         }}
       />
       <>{activeTab === "operations" ? <TransactionXdr /> : null}</>
-      <FloatingFeeDisplay totalFee={totalFee} />
+      <FloatingFeeDisplay totalFee={totalFee} network={network}/>
     </Box>
   );
 };

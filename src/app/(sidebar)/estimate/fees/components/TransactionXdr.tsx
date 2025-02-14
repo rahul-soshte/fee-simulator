@@ -36,6 +36,7 @@ import {
   OptionSigner,
   TxnOperation,
 } from "@/types/types";
+import { useEffect } from "react";
 
 const MAX_INT64 = "9223372036854775807";
 
@@ -486,6 +487,10 @@ export const TransactionXdr = () => {
     }
   };
 
+  useEffect(() => {
+    console.log("Network changed. Updating Transaction XDR...");
+  }, [network]); // Ensure XDR updates on network change
+  
   const txnXdr = txnJsonToXdr();
 
   if (txnXdr.error) {

@@ -363,6 +363,8 @@ export default function ViewXdr() {
     };
 
     try {
+      console.log(network.rpcUrl);
+      
       let res = await fetch(network.rpcUrl, {
         method: 'POST',
         headers: {
@@ -399,7 +401,7 @@ export default function ViewXdr() {
       console.log("Total Estimated Fee", totalEstimatedFee)
       setContractCosts(sorocosts);
       
-      const server = new StellarSDK.rpc.Server('https://soroban-testnet.stellar.org:443');
+      const server = new StellarSDK.rpc.Server(network.rpcUrl);
 
       let inclusionFee = await server.getFeeStats();
       let inclusionFeeMaxNum = Number(inclusionFee.sorobanInclusionFee.max) ;

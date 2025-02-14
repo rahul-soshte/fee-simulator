@@ -4,6 +4,7 @@ import { PositiveIntPicker } from "@/components/FormElements/PositiveIntPicker";
 import { Box } from "@/components/layout/Box";
 import { NextLink } from "@/components/NextLink";
 import * as StellarSDK from '@stellar/stellar-sdk';
+import { useStore } from '@/store/useStore';
 
 
 export function computeInstructionFee(instructions: string): number {
@@ -87,6 +88,7 @@ interface ParamsState {
 interface ParamsProps {
   onFeeUpdate: (fee: number, state: ParamsState) => void;
   initialState: ParamsState | null;
+  network: any;
 }
 
 export interface ActualUsage {
@@ -99,7 +101,7 @@ export interface ActualUsage {
   eventsReturnValueSize: string;
 }
 
-export const Params: React.FC<ParamsProps> = ({ onFeeUpdate, initialState }) => {
+export const Params: React.FC<ParamsProps> = ({ onFeeUpdate, initialState, network }) => {
   const [actualUsage, setActualUsage] = useState<ParamsState>(
     initialState || {
       cpuInstructionsPerTxn: "0",
@@ -140,7 +142,8 @@ export const Params: React.FC<ParamsProps> = ({ onFeeUpdate, initialState }) => 
 
   useEffect(() => {
     const fetchInclusionFee = async () => {
-      const server = new StellarSDK.rpc.Server('https://soroban-testnet.stellar.org:443');
+      console.log("Fetching fees from:", network.rpcUrl);
+      const server = new StellarSDK.rpc.Server(network.rpcUrl);
       try {
         const feeStats = await server.getFeeStats();
         setInclusionFee(Number(feeStats.sorobanInclusionFee.max) / 10000000); // Convert to XLM
@@ -148,9 +151,11 @@ export const Params: React.FC<ParamsProps> = ({ onFeeUpdate, initialState }) => 
         console.error('Error fetching fee stats:', error);
       }
     };
-
-    fetchInclusionFee();
-  }, []);
+  
+    if (network?.rpcUrl) {
+      fetchInclusionFee();
+    }
+  }, [network]); // Refetch when `network` changes
 
   const handleInputChange = (field: keyof ActualUsage, value: string) => {
     setActualUsage(prev => ({ ...prev, [field]: value }));

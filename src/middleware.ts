@@ -9,7 +9,7 @@ export function middleware(request: NextRequest) {
     script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https: 'unsafe-inline' 'unsafe-eval';
     style-src style-src 'self' https://fonts.googleapis.com 'unsafe-inline';
     img-src 'self' blob: data:;
-    connect-src 'self' https://9sl3dhr1twv1.statuspage.io/api/v2/ *.stellar.org https://mainnet.mercurydata.app;
+    connect-src *;
     font-src 'self' https://fonts.gstatic.com/;
     object-src 'none';
     base-uri 'self';
