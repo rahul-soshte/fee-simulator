@@ -28,7 +28,7 @@ export const NetworkOptions: Network[] = [
     id: "mainnet",
     label: "Mainnet",
     horizonUrl: "https://horizon.stellar.org",
-    rpcUrl: "https://soroban-rpc.mainnet.stellar.gateway.fm",
+    rpcUrl: "https://mainnet.sorobanrpc.com",
     passphrase: Networks.PUBLIC,
   },
   {

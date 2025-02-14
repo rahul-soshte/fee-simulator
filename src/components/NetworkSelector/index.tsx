@@ -34,7 +34,8 @@ export const NetworkSelector = () => {
   };
 
   const [customNetwork, setCustomNetwork] = useState(initialCustomState);
-  const [mainnetRpc, setMainnetRpc] = useState("");
+  // const [mainnetRpc, setMainnetRpc] = useState("");
+  const [mainnetRpc, setMainnetRpc] = useState(NetworkOptions.find(n => n.id === "mainnet")?.rpcUrl || "");
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
 
