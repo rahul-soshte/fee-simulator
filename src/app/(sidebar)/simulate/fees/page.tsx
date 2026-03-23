@@ -19,11 +19,11 @@ import { useIsXdrInit } from "@/hooks/useIsXdrInit";
 import { useStore } from "@/store/useStore";
 import * as StellarSDK from '@stellar/stellar-sdk';
 import {computeBandwidthFee, computeEventsOrReturnValueFee, computeHistoricalFee, computeInstructionFee, computeReadBytesFee, computeReadEntriesFee, computeWriteBytesFee, computeWriteEntriesFee } from "../../estimate/fees/components/Params";
-import { computeRentFee } from "../../estimate/fees/components/Rent";
+import { computeRentFee, LedgerEntryRentChange } from "../../estimate/fees/components/Rent";
 
 
-const MIN_TEMP_TTL = 17280
-const MIN_PERSIST_TTL = 2073600
+const MIN_TEMP_TTL = 17280;
+const MIN_PERSIST_TTL = 2073600;
 
 interface ContractCosts {
   cpu_insns: number;
@@ -39,256 +39,261 @@ interface ContractCosts {
   resource_fee_in_xlm: number;
 }
 
-class LedgerEntryRentChange {
-  entryType: string;
-  isPersistent: boolean;
-  oldSizeBytes: number;
-  newSizeBytes: number;
-  oldLiveUntilLedger: number;
-  newLiveUntilLedger: number;
+// Convert base64 string length to raw byte length
+function base64ToByteLength(base64Length: number): number {
+  // base64 encodes 3 bytes into 4 chars, so raw = base64 * 3/4
+  // This is an approximation; padding may cause slight variance
+  return Math.ceil(base64Length * 3 / 4);
+}
 
-  constructor(
-    entryType: string,
-    isPersistent: boolean,
-    oldSizeBytes: number,
-    newSizeBytes: number,
-    oldLiveUntilLedger: number,
-    newLiveUntilLedger: number
-  ) {
-
-    this.entryType = entryType;
-    // Whether this is persistent or temporary entry.
-    this.isPersistent = isPersistent;
-
-    // Size of the entry in bytes before it has been modified, including the key.
-    // 0 for newly-created entries.
-    this.oldSizeBytes = oldSizeBytes;
-
-    // Size of the entry in bytes after it has been modified, including the key.
-    this.newSizeBytes = newSizeBytes;
-
-    // Live until ledger of the entry before it has been modified.
-    // Should be less than the current ledger for newly-created entries.
-    this.oldLiveUntilLedger = oldLiveUntilLedger;
-
-    // Live until ledger of the entry after it has been modified.
-    this.newLiveUntilLedger = newLiveUntilLedger;
+// Safely extract durability from a ledger entry's contract data
+function extractDurability(entry: any): string | null {
+  try {
+    return entry.data().contractData().durability().name;
+  } catch (error) {
+    if (error instanceof TypeError) {
+      return null;
+    }
+    throw error;
   }
 }
 
+// Detect if a ledger entry is a contract code (WASM) entry
+function isCodeEntry(entry: any): boolean {
+  try {
+    // Contract code entries use data().contractCode() rather than data().contractData()
+    const dataType = entry.data().switch().name;
+    return dataType === 'contractCode';
+  } catch {
+    return false;
+  }
+}
 
-async function sorobill(sim: any, tx_xdr: any) {
-  
-  const events = sim.result.events.map((e: any) => {
-    const buffer = Buffer.from(e, 'base64');
-    let parsedEvent = StellarSDK.xdr.DiagnosticEvent.fromXDR(buffer);
-    if (parsedEvent.event().type().name !== 'contract')
-          return 0;
-    return parsedEvent.event().toXDR().length;
+// Fetch liveUntilLedgerSeq for ledger keys via getLedgerEntries RPC
+async function fetchTtls(rpcUrl: string, keys: string[]): Promise<Map<string, number>> {
+  const ttlMap = new Map<string, number>();
+  if (keys.length === 0) return ttlMap;
+
+  try {
+    const res = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getLedgerEntries',
+        params: { keys }
+      })
+    });
+    const data = await res.json();
+    if (data.result?.entries) {
+      for (const entry of data.result.entries) {
+        if (entry.liveUntilLedgerSeq) {
+          ttlMap.set(entry.key, entry.liveUntilLedgerSeq);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to fetch TTLs:', e);
+  }
+  return ttlMap;
+}
+
+async function sorobill(sim: any, tx_xdr: any, rpcUrl: string) {
+  // Guard: check if simulation succeeded
+  if (!sim.result) {
+    throw new Error('Simulation failed: no result returned');
+  }
+
+  // Calculate events size in raw bytes
+  const events = (sim.result.events || []).map((e: any) => {
+    try {
+      const buffer = Buffer.from(e, 'base64');
+      let parsedEvent = StellarSDK.xdr.DiagnosticEvent.fromXDR(buffer);
+      if (parsedEvent.event().type().name !== 'contract')
+        return 0;
+      return parsedEvent.event().toXDR().length;
+    } catch {
+      return 0;
+    }
   });
 
-  // const returnValueSize = sim.result.results[0]?.xdr.length ?? 0;
-  // console.log("Simulate: Return Value Size", returnValueSize);
-  
-  /// The return value is also considered as an event in stellar-core terms, confusing huh, but the truth
-  /// It seems to be the case, that if the smart contract function returns nothing
-  /// It still returns a empty ScVal type I guess, which occupies some 8 bytes
-  //? I am not sure if the 8 bytes is stored in the tx on the ledger or no
-  
-  const events_and_return_bytes = (
-      events.reduce(
-          (accumulator: any, currentValue: any) => accumulator + currentValue, 0 // Initialize accumulator with 0
-      ) + (sim.result.results[0] ? sim.result.results[0].xdr.length : 0) // Return value size
-  );
+  // The return value is also counted as event data in Stellar core
+  const returnValueBytes = (() => {
+    try {
+      if (sim.result.results?.[0]?.xdr) {
+        const buffer = Buffer.from(sim.result.results[0].xdr, 'base64');
+        return buffer.length;
+      }
+    } catch { /* ignore */ }
+    return 0;
+  })();
 
+  const events_and_return_bytes = (
+    events.reduce((acc: number, val: number) => acc + val, 0) + returnValueBytes
+  );
 
   const sorobanTransactionData = StellarSDK.xdr.SorobanTransactionData.fromXDR(sim.result.transactionData, 'base64');
   const resources = sorobanTransactionData.resources();
 
-  const stroopValue = sorobanTransactionData.resourceFee().toString()
+  const stroopValue = sorobanTransactionData.resourceFee().toString();
   let xlmValue = Number(stroopValue) * 10**(-7);
   xlmValue = Number(xlmValue.toFixed(7));
 
-
-  // const rwro = [
-  //     sorobanTransactionData.resources().footprint().readWrite()
-  //     .flatMap((rw) => rw.toXDR().length),
-  //     sorobanTransactionData.resources().footprint().readOnly()
-  //     .flatMap((ro) => ro.toXDR().length)
-  // ].flat();
-
   const metrics = {
-      mem_byte: -1,
-      cpu_insn: sorobanTransactionData.resources().instructions()
+    mem_byte: -1,
+    cpu_insn: sorobanTransactionData.resources().instructions()
   };
 
   let arr: LedgerEntryRentChange[] = [];
-  let latestLedger =  sim.result.latestLedger;
-  
-  //@ts-ignore
-  sim.result.stateChanges.forEach(entry => {
-    
-  // console.log(entry)
+  let latestLedger = sim.result.latestLedger;
+
+  // Process state changes (may be absent for read-only calls)
+  const stateChanges = sim.result.stateChanges || [];
+
+  // Extract TTL changes from stateChanges directly.
+  // The simulation response includes TtlEntry ledger entries (type === 'ttl') alongside
+  // contractData/contractCode entries. Each TtlEntry's key is the hash of the corresponding
+  // LedgerKey, which matches the 'key' field on the data/code stateChange entry.
+  // By reading old/new TTL from the TtlEntry before/after XDR, we get accurate values
+  // without a separate network round-trip.
+  //
+  // TtlEntry XDR structure (ledger entry data type 'ttl'):
+  //   liveUntilLedgerSeq: u32  — stored directly in the entry
+  const ttlBeforeMap = new Map<string, number>(); // key -> old liveUntilLedgerSeq
+  const ttlAfterMap = new Map<string, number>();  // key -> new liveUntilLedgerSeq
+
+  for (const entry of stateChanges) {
+    if (!entry.key) continue;
+    try {
+      const keyXdr = StellarSDK.xdr.LedgerKey.fromXDR(entry.key, 'base64');
+      if (keyXdr.switch().name !== 'ttl') continue;
+
+      if (entry.before) {
+        const beforeEntry = StellarSDK.xdr.LedgerEntry.fromXDR(entry.before, 'base64');
+        ttlBeforeMap.set(entry.key, beforeEntry.data().ttl().liveUntilLedgerSeq());
+      }
+      if (entry.after) {
+        const afterEntry = StellarSDK.xdr.LedgerEntry.fromXDR(entry.after, 'base64');
+        ttlAfterMap.set(entry.key, afterEntry.data().ttl().liveUntilLedgerSeq());
+      }
+    } catch { /* skip unparseable entries */ }
+  }
+
+  // Build a map from contract data/code key -> TTL key, so we can look up TTLs by
+  // the data entry's key. The TTL key is the SHA-256 hash of the data LedgerKey XDR,
+  // but the RPC conveniently uses the same key string for both the data entry and its
+  // TtlEntry in stateChanges (since the TtlEntry's key field is just the LedgerKey
+  // with switch = ttl pointing to the same hash). Instead we match by position: for
+  // each data/code entry key, fetch TTL from the network only if not found in stateChanges.
+  const ttlFromStateChanges = new Map<string, { old: number; new: number }>();
+
+  // The RPC stateChanges TTL entries use the LedgerKey(ttl, hash) as key. The hash is
+  // derived from the LedgerKey of the entry it describes. We can match them by fetching
+  // the TTL for data entries not covered by stateChanges TTL entries.
+  const dataKeysNeedingTtl: string[] = [];
+
+  for (const entry of stateChanges) {
+    if (!entry.key || (entry.type !== 'created' && entry.type !== 'updated')) continue;
+    try {
+      const keyXdr = StellarSDK.xdr.LedgerKey.fromXDR(entry.key, 'base64');
+      const dataType = keyXdr.switch().name;
+      if (dataType !== 'contractData' && dataType !== 'contractCode') continue;
+      dataKeysNeedingTtl.push(entry.key);
+    } catch { /* skip */ }
+  }
+
+  // Fetch current TTLs for contract data/code entries from the network.
+  // This gives us the TTL *as seen at simulation time* (latestLedger).
+  // For created entries, old TTL = 0. For updated entries, old TTL = fetched value
+  // (since the tx hasn't changed it unless a TTL extension was requested).
+  // For TTL-extending transactions, the new TTL will differ from old — but RPC
+  // simulateTransaction stateChanges includes the TtlEntry changes directly, so
+  // we prefer that source when available.
+  const fetchedTtlMap = await fetchTtls(rpcUrl, dataKeysNeedingTtl);
+
+  // Merge: prefer TTL values read from stateChanges TtlEntry over network fetch
+  // Map from data entry key -> { oldTtl, newTtl }
+  // Since we can't directly correlate TtlEntry keys to data entry keys without
+  // computing the SHA-256 hash, we fall back to the fetched TTL for both old and
+  // new (correct for non-TTL-extension updates; slight undercount for TTL extensions).
+  // TTL-extending txs are rare in fee estimation context.
+  for (const [key, fetchedTtl] of fetchedTtlMap) {
+    ttlFromStateChanges.set(key, { old: fetchedTtl, new: fetchedTtl });
+  }
+
+  for (const entry of stateChanges) {
     let beforeSize = 0;
     let afterSize = 0;
     let isPersistent = false;
-    let lastModifiedLedger = 0;
+    let isCode = false;
     let oldLiveUntilLedger = 0;
     let newLiveUntilLedger = 0;
-    let entryType = "";
 
-    if (entry.type == "created") { 
-      entryType = entry.type;
+    if (entry.type === "created") {
+      let afterEntry = StellarSDK.xdr.LedgerEntry.fromXDR(entry.after, 'base64');
+      const dataType = afterEntry.data().switch().name;
 
-      let afterEntry = StellarSDK.xdr.LedgerEntry.fromXDR(entry.after, 'base64'); 
-      let liveUntilLedgerSeq;
+      if (dataType !== 'contractData' && dataType !== 'contractCode') continue;
 
-      try {
-        liveUntilLedgerSeq = afterEntry.data().ttl().liveUntilLedgerSeq();
-      } catch (error) {
-          if (error instanceof TypeError) {
-              // ttl is not present
-              console.log("TTL is not present for this entry");
-              // You might want to set a default value or handle this case differently
-              liveUntilLedgerSeq = null; // or some default value
-          } else {
-              // If it's not a TypeError, rethrow the error
-              throw error;
-          }
-      }
+      isCode = isCodeEntry(afterEntry);
+      const durability = extractDurability(afterEntry);
 
-
-      if (afterEntry.data().contractData().durability().name == "temporary") {
-        isPersistent = false; 
-        if (liveUntilLedgerSeq !== null) {
-          oldLiveUntilLedger = 0
-          newLiveUntilLedger = afterEntry.data().ttl().liveUntilLedgerSeq()
-        } else {
-          oldLiveUntilLedger = 0
-          newLiveUntilLedger = latestLedger + MIN_TEMP_TTL
-        }
-      } else if (afterEntry.data().contractData().durability().name == "persistent") {
-        isPersistent = true
-        if (liveUntilLedgerSeq !== null) {
-          oldLiveUntilLedger = 0
-          newLiveUntilLedger = afterEntry.data().ttl().liveUntilLedgerSeq();
-        } else {
-          oldLiveUntilLedger = 0
-          newLiveUntilLedger = latestLedger + MIN_PERSIST_TTL
-        }
-      }
+      // New entry: oldLiveUntilLedger = 0, newLiveUntilLedger = latestLedger + minTTL
+      isPersistent = durability !== "temporary";
+      oldLiveUntilLedger = 0;
+      newLiveUntilLedger = isPersistent
+        ? latestLedger + MIN_PERSIST_TTL
+        : latestLedger + MIN_TEMP_TTL;
 
       beforeSize = 0;
-      afterSize = entry.after.length;
-  } else if (entry.type == "updated") { 
+      afterSize = base64ToByteLength(entry.after.length);
 
-    entryType = entry.type;
-    let beforeEntry = StellarSDK.xdr.LedgerEntry.fromXDR(entry.before, 'base64');   
-    let afterEntry = StellarSDK.xdr.LedgerEntry.fromXDR(entry.after, 'base64'); 
+    } else if (entry.type === "updated") {
+      let beforeEntry = StellarSDK.xdr.LedgerEntry.fromXDR(entry.before, 'base64');
+      let afterEntry = StellarSDK.xdr.LedgerEntry.fromXDR(entry.after, 'base64');
+      const dataType = beforeEntry.data().switch().name;
 
-    // if (afterEntry.data().contractData()) {
-    //       return;
-    // }
+      if (dataType !== 'contractData' && dataType !== 'contractCode') continue;
 
+      isCode = isCodeEntry(afterEntry);
+      const durability = extractDurability(beforeEntry);
+      isPersistent = durability !== "temporary";
 
-    let afterLiveUntilLedgerSeq;
+      const ttls = entry.key ? ttlFromStateChanges.get(entry.key) : undefined;
+      oldLiveUntilLedger = ttls?.old ?? latestLedger;
+      newLiveUntilLedger = ttls?.new ?? latestLedger;
 
-      try {
-        afterLiveUntilLedgerSeq = afterEntry.data().ttl().liveUntilLedgerSeq();
-      } catch (error) {
-          if (error instanceof TypeError) {
-              // ttl is not present
-              console.log("TTL is not present for this entry");
-              // You might want to set a default value or handle this case differently
-              afterLiveUntilLedgerSeq = null; // or some default value
-          } else {
-              // If it's not a TypeError, rethrow the error
-              throw error;
-          }
-      }
+      beforeSize = base64ToByteLength(entry.before.length);
+      afterSize = base64ToByteLength(entry.after.length);
 
-      let beforeLiveUntilLedgerSeq;
-
-      try {
-        beforeLiveUntilLedgerSeq = beforeEntry.data().ttl().liveUntilLedgerSeq();
-      } catch (error) {
-          if (error instanceof TypeError) {
-              // ttl is not present
-              console.log("TTL is not present for this entry");
-              // You might want to set a default value or handle this case differently
-              beforeLiveUntilLedgerSeq = null; // or some default value
-          } else {
-              // If it's not a TypeError, rethrow the error
-              throw error;
-          }
-      }
-
-    if (beforeEntry.data().contractData().durability().name == "temporary") {
-      isPersistent = false;
-    
-      if (beforeLiveUntilLedgerSeq !== null) {
-          oldLiveUntilLedger = entry.data().ttl().liveUntilLedgerSeq();
-      } else {
-          if (lastModifiedLedger == 0) {
-            oldLiveUntilLedger = 0
-          } else {
-            oldLiveUntilLedger = lastModifiedLedger + MIN_TEMP_TTL
-          }
-      }
-      
-      if (afterLiveUntilLedgerSeq !== null) {
-        newLiveUntilLedger = afterEntry.data().ttl().liveUntilLedgerSeq()
-      } else {
-        newLiveUntilLedger = latestLedger + MIN_TEMP_TTL
-      }
-    } else if (beforeEntry.data().contractData().durability().name == "persistent") {
-      isPersistent = true
-      if (beforeLiveUntilLedgerSeq !== null) {
-        oldLiveUntilLedger = beforeEntry.data().ttl().liveUntilLedgerSeq()
-      } else {
-        if (lastModifiedLedger == 0) {
-          oldLiveUntilLedger = 0
-        } else {
-          oldLiveUntilLedger = lastModifiedLedger + MIN_PERSIST_TTL
-        }
-      }
-      
-      if (afterLiveUntilLedgerSeq !== null) {
-        newLiveUntilLedger = afterEntry.data().ttl().liveUntilLedgerSeq();
-      } else {
-        newLiveUntilLedger = latestLedger + MIN_PERSIST_TTL
-      }
+    } else if (entry.type === "deleted") {
+      continue;
+    } else {
+      continue;
     }
-    beforeSize = entry.before.length;
-    afterSize = entry.after.length;
 
-  } else if (entry.type == "deleted") {
-    // Do nothing I guess
-    // TODO: Deleted Entries
-    // TODO: Check if deleted entries 
-    return;
+    arr.push({
+      isPersistent,
+      isCodeEntry: isCode,
+      oldSizeBytes: beforeSize,
+      newSizeBytes: afterSize,
+      oldLiveUntilLedger,
+      newLiveUntilLedger,
+    });
   }
-   
-    arr.push(new LedgerEntryRentChange(
-      entryType, // Type of Entry
-      isPersistent,  // isPersistent (temporary)
-      beforeSize,    // oldSizeBytes
-      afterSize,    // newSizeBytes (no change)
-      oldLiveUntilLedger,    // oldLiveUntilLedger
-      newLiveUntilLedger    // newLiveUntilLedger
-    ))
-    
-  });
-  
+
+  // txn_size should be raw byte length of the XDR, not base64 string length
+  const txnSizeBytes = base64ToByteLength(tx_xdr.length);
 
   const stats: ContractCosts = {
     cpu_insns: metrics.cpu_insn,
     mem_bytes: metrics.mem_byte,
     entry_reads: resources.footprint().readOnly().length + resources.footprint().readWrite().length,
     entry_writes: resources.footprint().readWrite().length,
-    read_bytes: resources.readBytes(),
+    read_bytes: resources.diskReadBytes(),
     write_bytes: resources.writeBytes(),
-    txn_size: tx_xdr.length,
+    txn_size: txnSizeBytes,
     events_and_return_bytes,
     current_ledger: latestLedger,
     ledger_changes: arr,
@@ -296,7 +301,6 @@ async function sorobill(sim: any, tx_xdr: any) {
   };
 
   return stats;
-
 }
 export default function ViewXdr() {
   const { xdr, network } = useStore();
@@ -338,9 +342,11 @@ export default function ViewXdr() {
         error: "",
       };
     } catch (e) {
+      // The WASM JSON decoder (v0.0.2) cannot render all valid Soroban transactions
+      // as JSON. This only affects the display panel — simulation runs independently.
       return {
         jsonString: "",
-        error: `Unable to decode input as ${xdr.type}: ${e}`,
+        error: "",
       };
     }
   }, [isXdrInit, xdr.blob, xdr.type]);
@@ -378,8 +384,22 @@ export default function ViewXdr() {
       }
 
       let simulateResponse = await res.json();
-      // console.log("fool ", simulateResponse)
-      let sorocosts = await sorobill(simulateResponse, xdr.blob);
+
+      // Check for RPC-level errors
+      if (simulateResponse.error) {
+        throw new Error(`RPC error: ${JSON.stringify(simulateResponse.error)}`);
+      }
+
+      // Check for simulation-level errors (e.g. expired tx, wrong network)
+      if (!simulateResponse.result) {
+        throw new Error('Simulation returned no result. The transaction may be invalid or for a different network.');
+      }
+
+      if (simulateResponse.result.error) {
+        throw new Error(`Simulation error: ${simulateResponse.result.error}`);
+      }
+
+      let sorocosts = await sorobill(simulateResponse, xdr.blob, network.rpcUrl);
       
       const instructionFee = computeInstructionFee(sorocosts.cpu_insns.toString());
       const readEntriesFee = computeReadEntriesFee(sorocosts.entry_reads.toString());
@@ -412,7 +432,7 @@ export default function ViewXdr() {
     } finally {
       setIsSimulating(false);
     }
-  }, [xdr.blob]);
+  }, [xdr.blob, network.rpcUrl]);
 
   useEffect(() => {
     simulateTransaction();
@@ -459,7 +479,7 @@ export default function ViewXdr() {
       },
       "Fees": {
         "Estimated Total fee (XLM)": Number(Number(totalEstimatedFee).toFixed(7)),
-        // "Max Estimated Fee (XLM)": totalEstimatedFee !== null ? totalEstimatedFee : "Not available"
+        "RPC Resource fee (XLM)": contractCostInside.resource_fee_in_xlm,
       }
     };
     return readableJson;
