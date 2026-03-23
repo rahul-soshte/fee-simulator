@@ -20,6 +20,10 @@ const nextConfig = {
   },
   webpack: (config) => {
     config.externals = [...(config.externals || []), { canvas: 'canvas' }];
+    config.experiments = {
+      ...config.experiments,
+      asyncWebAssembly: true,
+    };
     return config;
   },
   transpilePackages: ['chart.js', 'react-chartjs-2'],
