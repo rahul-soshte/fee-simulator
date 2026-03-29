@@ -276,7 +276,7 @@
     "@babel/helper-validator-identifier" "^7.24.7"
     to-fast-properties "^2.0.0"
 
-"@creit-tech/xbull-wallet-connect@git+https://github.com/Creit-Tech/xBull-Wallet-Connect.git#a93e2e0d97c61bbd83fedcca0c71feef9f28b2d3":
+"@creit-tech/xbull-wallet-connect@git+https://github.com/Creit-Tech/xBull-Wallet-Connect.git#a93e2e0d97c61bbd83fedcca0c71feef9f28b2d3", "@creit-tech/xbull-wallet-connect@github:Creit-Tech/xBull-Wallet-Connect#0.2.0":
   version "0.2.0"
   resolved "git+https://github.com/Creit-Tech/xBull-Wallet-Connect.git#a93e2e0d97c61bbd83fedcca0c71feef9f28b2d3"
   dependencies:
@@ -606,6 +606,11 @@
   dependencies:
     "@motionone/dom" "^10.16.4"
     tslib "^2.3.1"
+
+"@netlify/plugin-nextjs@^5.15.9":
+  version "5.15.9"
+  resolved "https://registry.yarnpkg.com/@netlify/plugin-nextjs/-/plugin-nextjs-5.15.9.tgz#8fa58d6b042b6f5055431cffdbf3390b65a7e5f9"
+  integrity sha512-4kJvV+wrt4/ncehfaOXfhv1FYKCv9EFjq6/tgXXYSlqPDcbsuTXR0DTz9IvyZ/CpPRadRD/zzIqD9wXgCmA2lg==
 
 "@next/env@14.2.11":
   version "14.2.11"

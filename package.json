@@ -53,6 +53,7 @@
     "@creit-tech/xbull-wallet-connect": "git+https://github.com/Creit-Tech/xBull-Wallet-Connect.git#a93e2e0d97c61bbd83fedcca0c71feef9f28b2d3"
   },
   "devDependencies": {
+    "@netlify/plugin-nextjs": "^5.15.9",
     "@next/eslint-plugin-next": "^14.2.4",
     "@stellar/tsconfig": "^1.0.2",
     "@types/dompurify": "^3.0.5",
