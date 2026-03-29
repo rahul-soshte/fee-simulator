@@ -276,9 +276,9 @@
     "@babel/helper-validator-identifier" "^7.24.7"
     to-fast-properties "^2.0.0"
 
-"@creit-tech/xbull-wallet-connect@github:Creit-Tech/xBull-Wallet-Connect#0.2.0":
+"@creit-tech/xbull-wallet-connect@git+https://github.com/Creit-Tech/xBull-Wallet-Connect.git#a93e2e0d97c61bbd83fedcca0c71feef9f28b2d3":
   version "0.2.0"
-  resolved "https://github.com/Creit-Tech/xBull-Wallet-Connect.git#a93e2e0d97c61bbd83fedcca0c71feef9f28b2d3"
+  resolved "git+https://github.com/Creit-Tech/xBull-Wallet-Connect.git#a93e2e0d97c61bbd83fedcca0c71feef9f28b2d3"
   dependencies:
     rxjs "^7.5.5"
     tweetnacl "^1.0.3"
