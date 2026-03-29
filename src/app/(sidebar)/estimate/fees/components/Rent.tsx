@@ -340,7 +340,7 @@ export const RentFeeCalculator: React.FC<RentFeeCalculatorProps> = ({ onRentFeeU
                   type="number"
                   value={rentChange.oldSizeBytes.toString()}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRentChange(idx, "oldSizeBytes", parseInt(e.target.value))}
-                  note="In-memory XDR size of the entry before the transaction. Set to 0 for newly created entries."
+                  note="In-memory XDR size of the entry before the transaction."
                 />
 
                 <Input
@@ -360,7 +360,7 @@ export const RentFeeCalculator: React.FC<RentFeeCalculatorProps> = ({ onRentFeeU
                   type="number"
                   value={rentChange.oldLiveUntilLedger.toString()}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRentChange(idx, "oldLiveUntilLedger", parseInt(e.target.value))}
-                  note="The ledger sequence until which the entry was live before this transaction. Set to 0 for new entries."
+                  note="The ledger sequence until which the entry was live before this transaction"
                 />
 
                 <Input
